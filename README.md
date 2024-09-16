@@ -1,0 +1,1 @@
+Attempt to implement an RCU lock in rust per [Linux Kernel Documentation](https://www.kernel.org/doc/html/latest/RCU/whatisRCU.html). I doubt this is a working version though, just somethign I've been meaning to try my hand at implementing.
