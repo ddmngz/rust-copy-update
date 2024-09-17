@@ -16,6 +16,8 @@ pub(crate) struct RcuInner<T: Sync> {
 impl<'a, T: Sync> RcuInner<T> {
     pub(crate) fn new(data: T) -> Self {
         let mut left = MaybeUninit::new(data);
+        // doesn't violate aliasing rules because cur points to left when right gets updated and
+        // vice versa
         let cur: AtomicPtr<T> = left.as_mut_ptr().into();
         let left = UnsafeCell::new(left);
         Self {
@@ -69,7 +71,7 @@ impl<'a, T: Sync> RcuInner<T> {
         unsafe { self.right.get().as_mut().unwrap() }
     }
 
-    // only safe if we have the reader lock
+    // only safe if we have the writer lock, or otherwise have exclusive access to self
     pub(crate) unsafe fn update(&self, new: T) -> Result<(), T> {
         if self.both_init.load(Ordering::Acquire) {
             Err(new)
@@ -82,9 +84,16 @@ impl<'a, T: Sync> RcuInner<T> {
                 unsafe { self.left_mut() }
             };
             *ptr = new;
+            // cur is updated and that's fine since we won't be getting a mutable reference of it
+            // anymore
             self.cur.store(ptr.as_mut_ptr(), Ordering::Release);
             Ok(())
         }
+    }
+
+    // only safe if we know that nobody is reading previous
+    pub(crate) unsafe fn reclaim(&self){
+        self.both_init.store(false,Ordering::Relaxed);
     }
 }
 

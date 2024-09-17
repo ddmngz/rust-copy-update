@@ -5,7 +5,6 @@ use std::sync::atomic::Ordering;
 use std::task::Context;
 use std::task::Poll;
 
-mod r#async;
 mod inner;
 
 use inner::InnerGuard;
@@ -26,19 +25,26 @@ impl<'a, T: Sync> Rcu<T> {
         }
     }
 
+    // never blocks!
     pub fn read(&self) -> RcuReadGuard<'_, T> {
         self.readers.fetch_add(1, Ordering::Acquire);
         RcuReadGuard { lock: self }
     }
 
     pub fn update_now(&mut self, new: T) {
+        // this raw call is safe because we currently have exclusive reference 
         if let Err(value) = unsafe { self.inner.update(new) } {
             self.synchronize();
-            self.update_now(value);
+            if (unsafe { self.inner.update(value) }).is_err(){
+                // can't use an unwrap because i don't want to restrict T to need to ipmlement
+                // Debug
+                panic!("somehow someone else updated while we were updating, shouldn't be allowed!!");
+            }
         }
         self.synchronize();
     }
 
+    // async version of update_now
     pub async fn update_later(&self, new: T) {
         let lock = (&self.inner).await;
         if let Err(new) = lock.update(new) {
@@ -50,16 +56,23 @@ impl<'a, T: Sync> Rcu<T> {
         }
     }
 
-    pub async fn asynchronize(&self) {
-        self.await
-    }
-
-    // block until all readers are reading the same data
-    fn synchronize(&self) {
+    // block until there are no more readers, guarantees that nobody is reading old data so we can
+    // update it
+    pub fn synchronize(&self) {
         while self.readers.load(Ordering::Relaxed) != 0 {}
+        // even if someone reads in between these two atomics, they will get a reference to the new
+        // data, so we can reclaim old data
+        unsafe{self.inner.reclaim()};
     }
 
-    // lock writes to self, now the user needs to synchronize and reclaim, but they can do it at
+    //async version of synchronize
+    pub async fn asynchronize(&self) {
+        self.await;
+        // safe for same reason as above
+        unsafe{self.inner.reclaim()};
+    }
+
+    // lock writes to self, now the user needs to synchronize and reclaim, but they can do that at
     // their leisure
     pub fn write(&'a self) -> RcuWriteGuard<'a, T> {
         let inner_lock = self.inner.lock();
