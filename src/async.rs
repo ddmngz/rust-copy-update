@@ -8,6 +8,8 @@ use std::sync::atomic::Ordering;
 use std::task::Context;
 use std::task::Poll;
 
+
+
 impl<T: Sync> Rcu<T> {
     // async version, returns the old value
     pub async fn update_later(&self, data: T) -> Result<T, NeedsReclaim> {
@@ -52,8 +54,8 @@ impl<T: Sync> Future for &Rcu<T> {
     }
 }
 
-impl<T: Sync> Future for &InnerLock<T> {
-    type Output = InnerGuard<T>;
+impl<'a, T: Sync> Future for &'a InnerLock<T> {
+    type Output = InnerGuard<'a,T>;
     fn poll(self: Pin<&mut Self>, _: &mut Context<'_>) -> Poll<Self::Output> {
         match self.try_lock() {
             None => Poll::Pending,
@@ -62,12 +64,4 @@ impl<T: Sync> Future for &InnerLock<T> {
     }
 }
 
-impl<T: Sync> Future for InnerLock<T> {
-    type Output = InnerGuard<T>;
-    fn poll(self: Pin<&mut Self>, _: &mut Context<'_>) -> Poll<Self::Output> {
-        match self.try_lock() {
-            None => Poll::Pending,
-            Some(guard) => Poll::Ready(guard),
-        }
-    }
-}
+
