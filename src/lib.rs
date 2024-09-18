@@ -5,6 +5,7 @@ use std::sync::atomic::Ordering;
 use std::task::Context;
 use std::task::Poll;
 
+pub mod evil_rcu;
 mod inner;
 
 use inner::InnerGuard;

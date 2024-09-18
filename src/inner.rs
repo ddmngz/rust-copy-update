@@ -4,10 +4,22 @@ use std::sync::atomic::AtomicBool;
 use std::sync::atomic::AtomicPtr;
 use std::sync::atomic::Ordering;
 use std::ptr;
+use std::pin::Pin;
+
+
+pub(crate) enum RcuInner<T:Sync>{
+    OneValue{
+        inner: Pin<Box<T>>,
+    },
+    TwoValues{
+        old:Pin<Box<T>>,    
+        new:Pin<Box<T>>,    
+    },
+}
 
 pub(crate) struct RcuInner<T: Sync> {
-    left: UnsafeCell<T>,
-    right: UnsafeCell<MaybeUninit<T>>,
+    left: Pin<Box<T>>,
+    right: Option<Pin<Box<T>>>,
     use_left: AtomicBool,
     writer_locked: AtomicBool,
     cur: AtomicPtr<T>,
