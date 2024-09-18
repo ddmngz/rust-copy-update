@@ -44,6 +44,20 @@ impl<'a, T: Sync> Rcu<T> {
         self.synchronize();
     }
 
+    pub fn update_locked(&self, new: T) {
+        let lock = self.write();
+        // this raw call is safe because we currently have exclusive reference 
+        if let Err(value) = lock.update(new){
+            self.synchronize();
+            if (lock.update(value)).is_err(){
+                // can't use an unwrap because i don't want to restrict T to need to ipmlement
+                // Debug
+                panic!("somehow someone else updated while we were updating, shouldn't be allowed!!");
+            }
+        }
+        self.synchronize();
+    }
+
     // async version of update_now
     pub async fn update_later(&self, new: T) {
         let lock = (&self.inner).await;
@@ -151,5 +165,27 @@ impl<'a, T: Sync> Future for &'a RcuInner<T> {
             None => Poll::Pending,
             Some(guard) => Poll::Ready(guard),
         }
+    }
+}
+
+#[cfg(test)]
+mod test{
+    use super::*;
+    #[test]
+    fn basic_operation(){
+        let rcu = Rcu::new(3);
+        rcu.inner.print_layout();
+        let reader_1 = rcu.read();
+        assert_eq!(*reader_1.as_ref(),3);
+        let lock = rcu.write();
+        assert!(lock.update(4).is_ok());
+        let reader_2 = rcu.read();
+        assert_eq!(*reader_1.as_ref(),3);
+        assert_eq!(*reader_2.as_ref(),4);
+        drop(reader_1);
+        drop(reader_2);
+        lock.synchronize();
+        let reader_3 = rcu.read();
+        assert_eq!(*reader_3.as_ref(),4);
     }
 }
